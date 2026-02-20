@@ -61,7 +61,7 @@ def main():
     sigma_a   = 9.2   # Standard deviation for auditory models (degrees)
 
     # Define experimental conditions
-    trials   = 10    # number of trials in the experiment
+    trials   = 1000    # number of trials in the experiment
     p_com_exp = 0.5     # (uniform) prior for generating a common cause for visual and auditory stimuli
                         # in experiment
 
@@ -79,7 +79,12 @@ def main():
     mae_a = 0                        # Mean absolute error for a estimates
     mas_v = 0                        # Mean absolute shift for v estimates
     mas_a = 0                        # Mean absolute shift for a estimates
-
+    # SILVER: store per-trial outputs for extra metrics 
+    est_C_list = []
+    real_C_list = []
+    p_single_list = []
+    s_a_est_list = []
+    real_s_a_list = []
     # Cycle through experimental trials and respective simulation data and analyse ideal observer performance
     for real_C, real_s_v, real_s_a, x_v, x_a in zip(real_C_exp, real_s_v_exp, real_s_a_exp, x_v_exp, x_a_exp):
 
@@ -93,7 +98,12 @@ def main():
 
         # Contribution to confusion matrix for C
         est_C = int(p_single_source <= 0.5) + 1 # est_C = estimation for C given p_single_source
-
+        # SILVER: collect per-trial outputs 
+        est_C_list.append(est_C)
+        real_C_list.append(real_C)
+        p_single_list.append(p_single_source)
+        s_a_est_list.append(s_a_est)
+        real_s_a_list.append(real_s_a)
         if est_C == real_C: # in case estimate for C matches real C for trial
             if real_C == 1:  # in case of single source match
                 conf_mat_C[0][0] += 1
@@ -114,7 +124,7 @@ def main():
         mas_v += abs(s_v - s_v_est)
         mas_a += abs(s_a - s_a_est)
 
-    # Compute final metrics values by averaging by number of trials
+    # Compute final metrics values by averaging by number of trialsn#
     mae_v /= trials
     mae_a /= trials
     mas_v /= trials
@@ -126,7 +136,45 @@ def main():
     plot_simple_performance_metrics(conf_mat_C, mae_v, mae_a, mas_v, mas_a)
 
     # ** STUDENT: ADD ANY OPTIONAL METRICS HERE **
+    # SILVER: Extra evaluation metrics (printed)
+    print("\n===== EXTRA PERFORMANCE METRICS (SILVER) =====")
 
+    C_true = np.array(real_C_list)
+    C_est = np.array(est_C_list)
+
+    # 1) Overall causal inference accuracy
+    acc = np.mean(C_true == C_est)
+    print(f"Causal inference accuracy: {acc*100:.2f}%")
+
+    # 2) Precision / Recall / F1 for detecting common cause (C=1)
+    # Treat "C=1" as the positive class
+    tp = np.sum((C_true == 1) & (C_est == 1))
+    fp = np.sum((C_true == 2) & (C_est == 1))
+    fn = np.sum((C_true == 1) & (C_est == 2))
+
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+
+    print(f"Common-cause detection (C=1): Precision={precision:.3f}, Recall={recall:.3f}, F1={f1:.3f}")
+
+    # 3) Signed auditory bias: (estimate - true)
+    # Positive means estimated sound is shifted to the right of true sound; negative means left.
+    s_a_true = np.array(real_s_a_list)
+    s_a_est_arr = np.array(s_a_est_list)
+
+    signed_bias = np.mean(s_a_est_arr - s_a_true)
+    abs_bias = np.mean(np.abs(s_a_est_arr - s_a_true))
+
+    print(f"Signed auditory localisation bias (mean): {signed_bias:.4f}")
+    print(f"Absolute auditory localisation error (mean): {abs_bias:.4f}")
+
+    # 4) Calibration-style metric for posterior P(C=1|x): Brier score
+    # Here p_single_source is P(C=1|x). Lower is better.
+    p_single = np.array(p_single_list)
+    y = (C_true == 1).astype(float)  # 1 if common cause else 0
+    brier = np.mean((p_single - y) ** 2)
+    print(f"Brier score for P(C=1|x): {brier:.4f}")
 
 
 if __name__ == "__main__":
